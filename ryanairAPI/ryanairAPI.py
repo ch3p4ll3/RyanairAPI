@@ -1,0 +1,223 @@
+import requests
+import json
+import logging
+
+from typing import List
+
+from .exceptions import UnableToFindMFAToken, UnableToLogin, UnableToFetchUserProfile, UnableToFetchUpcomingBookings
+from .endpoints import RyanairAPIEndpoints
+from .models import UserProfile, Booking
+
+
+class RyanairApi:
+    logging.basicConfig(filename='/dev/null', level=logging.NOTSET)
+
+    __customerId = ""
+    __authToken = ""
+    __sessionToken = ""
+
+    __cookies = None
+
+    def __init__(self):
+        pass
+
+    def login(self, username: str, password: str) -> None:
+        self.__cookies = requests.get('https://www.ryanair.com/it/it').cookies
+
+        data = json.dumps({'email': username, 'password': password, 'policyAgreed': True})
+
+        response = requests.post(
+            RyanairAPIEndpoints.login,
+            headers=RyanairAPIEndpoints.default_header,
+            data=data,
+            cookies=self.__cookies
+        )
+
+        self.__cookies = response.cookies
+
+        if response.status_code == 403:
+            response = self.__login_mfa(response)
+            print(response, response.json())
+
+        if response.status_code != 200:
+            logging.error('Impossible to login')
+            raise UnableToLogin(response)
+
+        data = response.json()
+
+        self.__customerId = data['customerId']
+        self.__authToken = data['token']
+        logging.debug('User logged in')
+
+    def __login_mfa(self, response) -> requests.Response:
+        try:
+            additional_data = response.json().get('additionalData', [])
+            mfa_token = next(iter(additional_data), {}).get('message')
+        except Exception:
+            raise UnableToFindMFAToken(response)
+
+        if mfa_token:
+            token = input('Insert the token sended by email: ')
+
+            data = {
+                'mfaCode': token,
+                'mfaToken': mfa_token
+            }
+
+            response = requests.put(
+                RyanairAPIEndpoints.device_fingerprint,
+                headers=RyanairAPIEndpoints.default_header,
+                json=data,
+                cookies=self.__cookies
+            )
+
+            return response
+
+    def get_user_profile(self) -> UserProfile:
+        """Return user profile, printing a description"""
+        headers = RyanairAPIEndpoints.default_header
+        headers.update({
+            'X-Auth-Token': self.__authToken
+        })
+        response = requests.get(
+            RyanairAPIEndpoints.profile,
+            headers=headers)
+
+        if response.status_code != 200:
+            logging.error('Impossible to fetch profile')
+            raise UnableToFetchUserProfile(response)
+
+        user = response.json()
+
+        return UserProfile(**user)
+
+    def get_upcoming_bookings(self) -> List[Booking]:
+        """Get the list of all upcoming bookings"""
+        headers = RyanairAPIEndpoints.default_header
+        headers.update({
+            'X-Auth-Token': self.__authToken
+        })
+        response = requests.get(
+            RyanairAPIEndpoints.get_active_bookings,
+            headers=headers
+        )
+
+        if response.status_code != 200:
+            logging.error('Impossible to fetch upcoming bookings')
+            UnableToFetchUpcomingBookings(response)
+
+        return [Booking(**item) for key, item in response.json().items()]
+
+    def get_all_seats(self):
+        bookings = self.get_upcoming_bookings()
+        # Display every booking
+        for travel in bookings:
+            self.infoBooking(travel.tripId)
+        return
+
+    def info_booking(self, booking_id: str):
+        """ Get and display information about one booking:
+        - Print informations about the flights on the booking
+        - Print informations about the passengers of the flights
+        - Print a guess of the seat it will be allocated to the passengers
+        """
+        url = 'v4/Booking'
+        headers = utils.getHeaders()
+        headers.update({
+            'Content-Type': 'application/json',
+            'Content-Length': '52',
+            'X-Auth-Token': self.authToken
+        })
+        data = {
+            'surrogateId': self.customerId,
+            'bookingId': bookingId
+        }
+        response = requests.post(
+            self.bookingApiUrl + url,
+            headers=headers,
+            data=json.dumps(data))
+
+        if response.status_code != 200:
+            logging.error('Impossible to fetch bookings')
+            print('Impossible to fetch bookings!')
+            exit(1)
+        result = response.json()
+
+        # Save the received sessionToken
+        self.sessionToken = response.headers['X-Session-Token']
+        # Get informations about seats for this booking
+        seatsList = self.infoSeats()
+        if seatsList is False:
+            logging.error('Impossible to fetch seats')
+            print('Impossible to fetch seats!')
+            exit(1)
+
+        # Flight info
+        print('Prenotation number: %s (Status of the flight: %s)' % (
+            utils.bclr.OKBLUE + result['info']['pnr'] + utils.bclr.ENDC,
+            utils.bclr.OKGREEN + result['info']['status'] + utils.bclr.ENDC))
+        numberofSeats = len(result['passengers'])
+        print ('Number of passengers: %s' % numberofSeats)
+        c = 0
+        # Print information about passengers
+        for passenger in result['passengers']:
+            c += 1
+            print ('  %i: %s %s' % (
+                c,
+                utils.bclr.HEADER + passenger['name']['first'],
+                passenger['name']['last'] + utils.bclr.ENDC))
+        c = 0
+        for journey in result['journeys']:
+
+            print ('   [%s] %s -> %s (%s)' % (
+                utils.bclr.OKBLUE + journey['flt'] + utils.bclr.ENDC,
+                utils.bclr.WARNING + journey['orig'] + utils.bclr.ENDC,
+                utils.bclr.WARNING + journey['dest'] + utils.bclr.ENDC,
+                utils.parseDate(journey['depart'])))
+
+            if 'reasonCode' in journey['changeInfo'] and \
+               journey['changeInfo']['reasonCode'] == 'PassengerCheckedIn':
+                print ('   Already checked-in')
+            else:
+                allocation = self.getSeat(
+                    seatsList[c]['unavailableSeats'],
+                    numberofSeats)
+                if (allocation['status'] == 'error'):
+                    print (allocation['message'])
+                else:
+                    print ('   If you do check-in now, you will have \
+seat %s %s' % (
+                        utils.bclr.OKGREEN +
+                        allocation['seat'] +
+                        utils.bclr.ENDC,
+                        seats.seatInfo(allocation['seat'])))
+            c += 1
+        return
+
+    def infoSeats(self):
+        """ Show informations about seats for the booking
+        - Return also the list of unavailable (already allocated) seats
+        """
+        url = 'v4/Seat'
+        headers = utils.getHeaders()
+        headers.update({
+            'X-Session-Token': self.sessionToken
+        })
+        response = requests.get(self.bookingApiUrl + url, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return False
+
+    def getSeat(self, unavailable, numberofSeats):
+        """ Return the seat that will be allocated during check-in"""
+        response = dict()
+        if utils.MAXPASSENGERS > numberofSeats:
+            response['status'] = 'error'
+            response['message'] = '   We are sorry but we currently \
+don\'t support seat prediction for flights \
+with %s passengers.' % numberofSeats
+        else:
+            response['status'] = 'ok'
+            response['seat'] = seats.getFirstFree(unavailable)
+
+        return response
