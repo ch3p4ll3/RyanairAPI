@@ -12,32 +12,31 @@ from .models import UserProfile, Booking
 class RyanairApi:
     logging.basicConfig(filename='/dev/null', level=logging.NOTSET)
 
+    __http_session = requests.Session()
+    __http_session.headers = RyanairAPIEndpoints.DEFAULT_HEADER
+
     __customerId = ""
     __authToken = ""
-    __sessionToken = ""
+    __sessionToken = ""In the following section, you’ll learn how to set headers for a Python requests Session.
 
-    __cookies = None
+
 
     def __init__(self):
         pass
 
     def login(self, username: str, password: str) -> None:
-        self.__cookies = requests.get('https://www.ryanair.com/it/it').cookies
+        self.__http_session.get('https://www.ryanair.com/it/it')
 
         data = json.dumps({'email': username, 'password': password, 'policyAgreed': True})
 
-        response = requests.post(
-            RyanairAPIEndpoints.login,
-            headers=RyanairAPIEndpoints.default_header,
-            data=data,
-            cookies=self.__cookies
+        response = self.__http_session.post(
+            RyanairAPIEndpoints.LOGIN,
+            headers=RyanairAPIEndpoints.DEFAULT_HEADER,
+            data=data
         )
-
-        self.__cookies = response.cookies
 
         if response.status_code == 403:
             response = self.__login_mfa(response)
-            print(response, response.json())
 
         if response.status_code != 200:
             logging.error('Impossible to login')
@@ -47,6 +46,8 @@ class RyanairApi:
 
         self.__customerId = data['customerId']
         self.__authToken = data['token']
+        self.get_session_token()
+
         logging.debug('User logged in')
 
     def __login_mfa(self, response) -> requests.Response:
@@ -57,31 +58,41 @@ class RyanairApi:
             raise UnableToFindMFAToken(response)
 
         if mfa_token:
-            token = input('Insert the token sended by email: ')
+            token = input('Insert the token received by email: ')
 
-            data = {
+            data = json.dumps({
                 'mfaCode': token,
                 'mfaToken': mfa_token
-            }
+            })
 
-            response = requests.put(
-                RyanairAPIEndpoints.device_fingerprint,
-                headers=RyanairAPIEndpoints.default_header,
-                json=data,
-                cookies=self.__cookies
+            response = self.__http_session.put(
+                RyanairAPIEndpoints.DEVICE_FINGERPRINT,
+                headers=RyanairAPIEndpoints.DEFAULT_HEADER,
+                data=data
             )
 
             return response
 
+    def get_session_token(self):
+        response = self.__http_session.get(
+            RyanairAPIEndpoints.SESSION_TOKEN.substitute(customerId=self.__customerId),
+            headers=RyanairAPIEndpoints.DEFAULT_HEADER
+        )
+
+        if response.status_code != 200:
+            raise Exception
+
+        self.__sessionToken = response.json().get('token')
+
     def get_user_profile(self) -> UserProfile:
-        """Return user profile, printing a description"""
-        headers = RyanairAPIEndpoints.default_header
-        headers.update({
-            'X-Auth-Token': self.__authToken
-        })
-        response = requests.get(
-            RyanairAPIEndpoints.profile,
-            headers=headers)
+        """Return user profile"""
+        headers = RyanairAPIEndpoints.DEFAULT_HEADER
+        headers['X-Auth-Token'] = self.__authToken
+
+        response = self.__http_session.get(
+            RyanairAPIEndpoints.PROFILE.substitute(customerId=self.__customerId),
+            headers=headers
+        )
 
         if response.status_code != 200:
             logging.error('Impossible to fetch profile')
@@ -93,12 +104,13 @@ class RyanairApi:
 
     def get_upcoming_bookings(self) -> List[Booking]:
         """Get the list of all upcoming bookings"""
-        headers = RyanairAPIEndpoints.default_header
+        headers = RyanairAPIEndpoints.DEFAULT_HEADER
         headers.update({
             'X-Auth-Token': self.__authToken
         })
+
         response = requests.get(
-            RyanairAPIEndpoints.get_active_bookings,
+            RyanairAPIEndpoints.GET_ACTIVE_BOOKINGS.substitute(customerId=self.__customerId),
             headers=headers
         )
 
