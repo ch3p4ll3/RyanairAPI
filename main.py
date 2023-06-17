@@ -2,7 +2,8 @@ from os import getenv
 
 from ryanairAPI import RyanairApi
 
-a = RyanairApi()
-#a.login(getenv('RYANAIR_EMAIL'), getenv('RYANAIR_PASSWORD'))
+ryanair_api = RyanairApi()
 
-print(a.get_upcoming_bookings())
+ryanair_api.login(getenv('RYANAIR_EMAIL'), getenv('RYANAIR_PASSWORD'))
+
+print(ryanair_api.get_upcoming_bookings())
