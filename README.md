@@ -7,12 +7,13 @@ If you would like to help out with adding new features or improving the code, fe
 
 ## Current Status:
 
-| Component                    | Status | Notes             |
-|------------------------------|:------:|-------------------|
-| Login                        |   ✔️   |                   |
-| Login MFA                    |   ✔️   |                   |
-| Cache session                |   ✔️   |                   |
-| get user profile             |  🛠️   | Under development |
-| get user active bookings     |  🛠️   | Under development |
-| get user not active bookings |  🛠️   | Under development |
-| get session token            |  🛠️   | Under development |
+| Component                    | Status | Notes |
+|------------------------------|:------:|-------|
+| Login                        |   ✔    |       |
+| Login MFA                    |   ✔    |       |
+| Cache session                |   ✔    |       |
+| get user profile             |   ✔    |       |
+| get user active bookings     |   ✔    |       |
+| get user not active bookings |   ✔    |       |
+| get booking by trip id       |   ✔    |       |
+| get session token            |   ✔    |       |
