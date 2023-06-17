@@ -5,7 +5,9 @@ import pickle
 import json
 import logging
 
-from typing import List
+from typing import List, Union
+
+from functools import lru_cache
 
 from .exceptions import UnableToFindMFAToken, UnableToLogin, UnableToFetchUserProfile, UnableToFetchUpcomingBookings
 from .endpoints import RyanairAPIEndpoints
@@ -102,6 +104,7 @@ class RyanairApi:
 
         self.__sessionToken = response.json().get('token')
 
+    @lru_cache(maxsize=50)
     def get_user_profile(self) -> UserProfile:
         """Return user profile"""
         self.__http_session.headers['X-Auth-Token'] = self.__authToken
@@ -121,15 +124,44 @@ class RyanairApi:
 
         return UserProfile(**user)
 
-    def get_upcoming_bookings(self) -> List[Booking]:
+    def __get_booking_by_trip_id(self, trip_id: str):
+        headers = RyanairAPIEndpoints.DEFAULT_HEADER
+        headers.update({
+            'X-Auth-Token': self.__authToken
+        })
+
+        url = RyanairAPIEndpoints.GET_BOOKING_BY_TRIP_ID
+
+        response = self.__http_session.get(
+            url.substitute(customerId=self.__customerId, trip_id=trip_id),
+            headers=headers
+        )
+
+        if response.status_code != 200:
+            logging.error('Impossible to fetch upcoming bookings')
+            raise UnableToFetchUpcomingBookings(response)
+
+        raw_bookings = response.json()
+
+        raw_bookings.pop('productTypes')
+
+        raw_flights = raw_bookings.pop('flights')
+        flights = RyanairApi.__parse_flights(raw_flights)
+        return Booking(flights=flights, **raw_bookings)
+
+    @lru_cache(maxsize=50)
+    def __get_bookings(self, active_bookings: bool = True):
         """Get the list of all upcoming bookings"""
         headers = RyanairAPIEndpoints.DEFAULT_HEADER
         headers.update({
             'X-Auth-Token': self.__authToken
         })
 
-        response = requests.get(
-            RyanairAPIEndpoints.GET_ACTIVE_BOOKINGS.substitute(customerId=self.__customerId),
+        url = RyanairAPIEndpoints.GET_ACTIVE_BOOKINGS if active_bookings \
+            else RyanairAPIEndpoints.GET_NOT_ACTIVE_BOOKINGS
+
+        response = self.__http_session.get(
+            url.substitute(customerId=self.__customerId),
             headers=headers
         )
 
@@ -148,6 +180,18 @@ class RyanairApi:
             bookings.append(Booking(flights=flights, **booking))
 
         return bookings
+
+    def get_upcoming_bookings(self) -> List[Booking]:
+        return self.__get_bookings()
+
+    def get_prior_bookings(self) -> List[Booking]:
+        return self.__get_bookings(False)
+
+    def get_all_bookings(self) -> List[Booking]:
+        return self.__get_bookings() + self.__get_bookings(False)
+
+    def get_booking_by_trip_id(self, trip_id: str) -> Booking:
+        return self.__get_booking_by_trip_id(trip_id)
 
     @staticmethod
     def __parse_flights(raw_flights: List[dict]) -> List[Flight]:

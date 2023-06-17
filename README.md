@@ -15,4 +15,5 @@ If you would like to help out with adding new features or improving the code, fe
 | get user profile             |  🛠️   | Under development |
 | get user active bookings     |  🛠️   | Under development |
 | get user not active bookings |  🛠️   | Under development |
+| get booking by trip id       |  🛠️   | Under development |
 | get session token            |  🛠️   | Under development |
