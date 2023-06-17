@@ -135,7 +135,7 @@ class RyanairApi:
 
         if response.status_code != 200:
             logging.error('Impossible to fetch upcoming bookings')
-            UnableToFetchUpcomingBookings(response)
+            raise UnableToFetchUpcomingBookings(response)
 
         raw_bookings = response.json()
         bookings = []
