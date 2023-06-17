@@ -1,6 +1,6 @@
 from os import getenv
 
-from ryanairAPI import RyanairApi
+from src.ryanairAPI import RyanairApi
 
 ryanair_api = RyanairApi()
 
