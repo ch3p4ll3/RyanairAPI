@@ -1,24 +1,26 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from re import sub
+
+from typing import Union
+
 
 @dataclass
 class UserProfile:
     firstName: str
     lastName: str
-    dateOfBirth: str
+    dateOfBirth: Union[str, datetime]
     maskedDateOfBirth: str
     nationalityCountryCode: str
     googlePictureUrl: str
     email: str
     complete: str
     profileProgress: str
-    memberSince: str
+    memberSince: Union[str, datetime]
 
-    @property
-    def date_of_birth(self) -> datetime:
-        return datetime.strptime(self.dateOfBirth, "%Y-%m-%d")
+    def __post_init__(self):
+        self.dateOfBirth = datetime.strptime(self.dateOfBirth, "%Y-%m-%d")
 
-    @property
-    def member_since(self) -> datetime:
-        return datetime.strptime(self.memberSince.replace('Z', 'UTC'), "%Y-%m-%dT%H:%M:%S%Z")
+        self.memberSince = sub(r'\.\d+Z', 'UTC', self.memberSince)
+        self.memberSince = datetime.strptime(self.memberSince.replace('Z', 'UTC'), "%Y-%m-%dT%H:%M:%S%Z")

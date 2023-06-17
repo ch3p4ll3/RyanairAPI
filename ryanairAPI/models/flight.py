@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Union
 from .journey import Journey
 
 from datetime import datetime
@@ -9,8 +9,8 @@ from datetime import datetime
 class Flight:
     origin: str
     destination: str
-    departureDate: str
-    arrivalDate: str
+    departureDate: Union[str, datetime]
+    arrivalDate: Union[str, datetime]
     pnr: str
 
     journeys: List[Journey]
@@ -18,10 +18,6 @@ class Flight:
     addOns: str
     bookingId: str
 
-    @property
-    def departure_date(self) -> datetime:
-        return datetime.strptime(self.departureDate.replace('Z', 'UTC'), "%Y-%m-%dT%H:%M:%S%Z")
-
-    @property
-    def arrival_date(self) -> datetime:
-        return datetime.strptime(self.arrivalDate.replace('Z', 'UTC'), "%Y-%m-%dT%H:%M:%S%Z")
+    def __post_init__(self):
+        self.departureDate = datetime.strptime(self.departureDate.replace('Z', 'UTC'), "%Y-%m-%dT%H:%M:%S%Z")
+        self.arrivalDate = datetime.strptime(self.arrivalDate.replace('Z', 'UTC'), "%Y-%m-%dT%H:%M:%S%Z")

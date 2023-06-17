@@ -1,4 +1,7 @@
+import os.path
+
 import requests
+import pickle
 import json
 import logging
 
@@ -6,7 +9,7 @@ from typing import List
 
 from .exceptions import UnableToFindMFAToken, UnableToLogin, UnableToFetchUserProfile, UnableToFetchUpcomingBookings
 from .endpoints import RyanairAPIEndpoints
-from .models import UserProfile, Booking
+from .models import UserProfile, Booking, Flight, Segment, Journey
 
 
 class RyanairApi:
@@ -17,14 +20,16 @@ class RyanairApi:
 
     __customerId = ""
     __authToken = ""
-    __sessionToken = ""In the following section, you’ll learn how to set headers for a Python requests Session.
-
-
+    __sessionToken = ""
 
     def __init__(self):
         pass
 
     def login(self, username: str, password: str) -> None:
+        self.__import_session()
+        self.__standard_login(username, password)
+
+    def __standard_login(self, username, password):
         self.__http_session.get('https://www.ryanair.com/it/it')
 
         data = json.dumps({'email': username, 'password': password, 'policyAgreed': True})
@@ -46,7 +51,9 @@ class RyanairApi:
 
         self.__customerId = data['customerId']
         self.__authToken = data['token']
-        self.get_session_token()
+
+        self.__export_session()
+        # self.get_session_token()
 
         logging.debug('User logged in')
 
@@ -73,6 +80,17 @@ class RyanairApi:
 
             return response
 
+    def __export_session(self):
+        with open('session', 'wb') as f:
+            pickle.dump(self.__http_session.cookies, f)
+
+    def __import_session(self):
+        if not os.path.exists('./session'):
+            return
+
+        with open('session', 'rb') as f:
+            self.__http_session.cookies.update(pickle.load(f))
+
     def get_session_token(self):
         response = self.__http_session.get(
             RyanairAPIEndpoints.SESSION_TOKEN.substitute(customerId=self.__customerId),
@@ -86,12 +104,12 @@ class RyanairApi:
 
     def get_user_profile(self) -> UserProfile:
         """Return user profile"""
-        headers = RyanairAPIEndpoints.DEFAULT_HEADER
-        headers['X-Auth-Token'] = self.__authToken
+        self.__http_session.headers['X-Auth-Token'] = self.__authToken
+        self.__http_session.headers['X-Session-Token'] = self.__sessionToken
 
         response = self.__http_session.get(
             RyanairAPIEndpoints.PROFILE.substitute(customerId=self.__customerId),
-            headers=headers
+            headers=self.__http_session.headers
         )
 
         if response.status_code != 200:
@@ -99,6 +117,7 @@ class RyanairApi:
             raise UnableToFetchUserProfile(response)
 
         user = response.json()
+        user.pop('title')
 
         return UserProfile(**user)
 
@@ -118,7 +137,35 @@ class RyanairApi:
             logging.error('Impossible to fetch upcoming bookings')
             UnableToFetchUpcomingBookings(response)
 
-        return [Booking(**item) for key, item in response.json().items()]
+        raw_bookings = response.json()
+        bookings = []
+
+        for booking in raw_bookings.get('items', []):
+            booking.pop('productTypes')
+
+            raw_flights = booking.pop('flights')
+            flights = RyanairApi.__parse_flights(raw_flights)
+            bookings.append(Booking(flights=flights, **booking))
+
+        return bookings
+
+    @staticmethod
+    def __parse_flights(raw_flights: List[dict]) -> List[Flight]:
+        flights = []
+        journeys = []
+
+        for flight in raw_flights:
+            flight.pop('passengers')
+
+            for journey in flight.pop('journeys'):
+                segments = []
+                for segment in journey.pop('segments'):
+                    segments.append(Segment(**segment))
+                journeys.append(Journey(segments))
+
+            flights.append(Flight(journeys=journeys, **flight))
+
+        return flights
 
     def get_all_seats(self):
         bookings = self.get_upcoming_bookings()
